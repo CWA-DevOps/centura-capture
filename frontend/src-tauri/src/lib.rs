@@ -390,6 +390,13 @@ pub fn get_language_preference_internal() -> Option<String> {
 pub fn run() {
     log::set_max_level(log::LevelFilter::Info);
 
+    // Centura Capture (M2): load a local, gitignored .env so DEEPGRAM_API_KEY is
+    // available via std::env. Walks up from the working dir; missing file is fine.
+    match dotenvy::dotenv() {
+        Ok(path) => log::info!("Loaded .env from {}", path.display()),
+        Err(_) => log::info!("No .env file found (Deepgram will fall back to local STT if no key)"),
+    }
+
     let mut builder = tauri::Builder::default();
 
     #[cfg(any(target_os = "macos", windows, target_os = "linux"))]

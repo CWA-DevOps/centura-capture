@@ -135,6 +135,30 @@ pub async fn validate_transcription_model_ready<R: Runtime>(app: &AppHandle<R>) 
                 }
             }
         }
+        "deepgram" => {
+            // Centura Capture (M2): Deepgram streams server-side, so there is no local
+            // model to validate. If a key is present, we're good. If not, validate the
+            // local fallback (Parakeet) so the meeting can still start.
+            if super::deepgram::api_key().is_some() {
+                info!("✅ Deepgram selected and API key present — streaming STT will be used");
+                Ok(())
+            } else {
+                warn!("⚠️ Deepgram selected but no API key in .env — validating local fallback (Parakeet)");
+                if let Err(init_error) = crate::parakeet_engine::commands::parakeet_init().await {
+                    return Err(format!(
+                        "Deepgram has no key and the local fallback failed to initialize: {}",
+                        init_error
+                    ));
+                }
+                match crate::parakeet_engine::commands::parakeet_validate_model_ready_with_config(app).await {
+                    Ok(model_name) => {
+                        info!("✅ Local fallback (Parakeet) model ready: {}", model_name);
+                        Ok(())
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+        }
         other => {
             warn!("❌ Unsupported transcription provider for local recording: {}", other);
             Err(format!(

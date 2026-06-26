@@ -29,7 +29,8 @@ impl Default for RecordingPreferences {
     fn default() -> Self {
         Self {
             save_folder: get_default_recordings_folder(),
-            auto_save: true,
+            // Centura Capture (M1): default to NOT persisting audio to disk.
+            auto_save: false,
             file_format: "mp4".to_string(),
             preferred_mic_device: None,
             preferred_system_device: None,

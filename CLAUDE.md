@@ -1,3 +1,38 @@
+# Centura Capture — fork mission (read first)
+
+This repo is **Centura Capture**, Centura Wealth Advisory's live meeting transcriber. It is a fork of
+**Meetily** (the original Meetily guidance below is the build bible — keep it). We change three of
+Meetily's defaults to fit Centura's Context Engine:
+
+1. **Cloud STT backend (Deepgram).** Meetily transcribes locally (Whisper/Parakeet in
+   `frontend/src-tauri/src/whisper_engine/`). Add a **swappable** streaming backend and use **Deepgram**
+   (live WebSocket, `diarize=true`) so a slow laptop works and it scales to the firm. Keep local Whisper
+   as a fallback backend. Read the key from a local `.env` (`DEEPGRAM_API_KEY`); never commit it.
+2. **No saved audio.** Meetily saves recordings to disk via the Recording path
+   (`frontend/src-tauri/src/audio/recording_saver.rs`, coordinated in `audio/recording_manager.rs` and
+   `audio/pipeline.rs`). **Disable that path entirely** — only the Transcription path (VAD → STT) runs.
+   Verify no `.wav` is written during or after a meeting.
+3. **Vault output.** On meeting end, write the transcript + a minimal paired meeting note into the
+   CenturaOS vault and trigger the synthesizer. Contract + frontmatter schema:
+   `C:\Users\JakeSteffens\Claude\CenturaOS\Outputs\Centura Capture — CodeBlock Kickoff.md` and
+   `C:\Users\JakeSteffens\Claude\CenturaOS\.claude\skills\meeting-notes-synthesizer\frontmatter-schema.md`.
+
+Note: this community fork has **no diarization** (Meetily PRO only); Deepgram supplies it server-side.
+
+## Recommended build order
+- **M0:** run Meetily as-is on Windows with its built-in local Whisper (fast end-to-end win on the
+  RTX 4060). Build/run: `frontend/clean_run_windows.bat`, or `cd frontend; pnpm install; pnpm run
+  tauri:dev`. Prereqs: Rust, Node + pnpm, Visual Studio Build Tools (C++ workload).
+- **M1:** disable the audio-saving path (no saved audio).
+- **M2:** add the Deepgram streaming backend behind a swappable interface; diarization on.
+- **M3:** write transcript + paired note into the vault `Meetings/Inbox/`, trigger the synthesizer.
+- **M4:** package with Intune. **M5:** pilot on real meetings.
+
+The supported app lives in `frontend/` (Rust core in `frontend/src-tauri/`). The top-level `backend/`
+(Python/FastAPI) is **legacy archive — ignore it**.
+
+---
+
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.

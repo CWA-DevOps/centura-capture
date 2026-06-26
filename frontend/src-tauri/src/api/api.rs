@@ -632,10 +632,12 @@ pub async fn api_get_transcript_config<R: Runtime>(
             }
         }
         Ok(None) => {
-            log_info!("No transcript config found, returning default.");
+            // Centura Capture (M2): Deepgram is the default transcription provider for
+            // fresh installs (falls back to local automatically if no .env key).
+            log_info!("No transcript config found, returning Deepgram default.");
             Ok(Some(TranscriptConfig {
-                provider: "parakeet".to_string(),
-                model: crate::config::DEFAULT_PARAKEET_MODEL.to_string(),
+                provider: "deepgram".to_string(),
+                model: "nova-3".to_string(),
                 api_key: None,
             }))
         }

@@ -36,6 +36,10 @@ pub struct TranscriptUpdate {
     pub audio_start_time: f64, // Seconds from recording start (e.g., 125.3)
     pub audio_end_time: f64,   // Seconds from recording start (e.g., 128.6)
     pub duration: f64,          // Segment duration in seconds (e.g., 3.3)
+    // Centura Capture (M2): diarization speaker label (e.g. "Speaker 1").
+    // None for local engines (Whisper/Parakeet), which don't diarize.
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 // NOTE: get_transcript_history and get_recording_meeting_name functions
@@ -48,6 +52,15 @@ pub fn start_transcription_task<R: Runtime>(
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         info!("🚀 Starting optimized parallel transcription task - guaranteeing zero chunk loss");
+
+        // Centura Capture (M2): try the Deepgram streaming backend first. If it is
+        // not selected, has no API key, or fails to connect, fall back to the local
+        // engine path below with the receiver handed back untouched.
+        let transcription_receiver =
+            match super::deepgram::maybe_run_deepgram(app.clone(), transcription_receiver).await {
+                super::deepgram::DeepgramOutcome::Handled => return,
+                super::deepgram::DeepgramOutcome::FallBack(rx) => rx,
+            };
 
         // Initialize transcription engine (Whisper or Parakeet based on config)
         let transcription_engine = match super::engine::get_or_init_transcription_engine(&app).await {
@@ -217,6 +230,7 @@ pub fn start_transcription_task<R: Runtime>(
                                             audio_start_time,
                                             audio_end_time,
                                             duration: chunk_duration,
+                                            speaker: None, // local engines don't diarize
                                         };
 
                                         if let Err(e) = app_clone.emit("transcript-update", &update)

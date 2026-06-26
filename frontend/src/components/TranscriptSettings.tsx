@@ -53,12 +53,14 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
     const modelOptions = {
         localWhisper: [], // Model selection handled by ModelManager component
         parakeet: [], // Model selection handled by ParakeetModelManager component
-        deepgram: ['nova-2-phonecall'],
+        deepgram: ['nova-3'],
         elevenLabs: ['eleven_multilingual_v2'],
         groq: ['llama-3.3-70b-versatile'],
         openai: ['gpt-4o'],
     };
-    const requiresApiKey = transcriptModelConfig.provider === 'deepgram' || transcriptModelConfig.provider === 'elevenLabs' || transcriptModelConfig.provider === 'openai' || transcriptModelConfig.provider === 'groq';
+    // Centura Capture (M2): Deepgram's key comes from the local .env, not the in-app
+    // field, so Deepgram does NOT require the API-key input here.
+    const requiresApiKey = transcriptModelConfig.provider === 'elevenLabs' || transcriptModelConfig.provider === 'openai' || transcriptModelConfig.provider === 'groq';
 
     const handleInputClick = () => {
         if (isApiKeyLocked) {
@@ -114,6 +116,13 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     setUiProvider(provider);
                                     if (provider !== 'localWhisper' && provider !== 'parakeet') {
                                         fetchApiKey(provider);
+                                        // Centura Capture (M2): cloud providers have no Save button and
+                                        // no model-manager, so persist the selection immediately.
+                                        const model = modelOptions[provider]?.[0] ?? '';
+                                        setTranscriptModelConfig({ ...transcriptModelConfig, provider, model });
+                                        invoke('api_save_transcript_config', { provider, model, apiKey: null })
+                                            .then(() => console.log('Saved transcript config:', provider, model))
+                                            .catch((e) => console.error('Failed to save transcript config', e));
                                     }
                                 }}
                             >
@@ -121,10 +130,10 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     <SelectValue placeholder="Select provider" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    <SelectItem value="parakeet">⚡ Parakeet (Recommended - Real-time / Accurate)</SelectItem>
-                                    <SelectItem value="localWhisper">🏠 Local Whisper (High Accuracy)</SelectItem>
-                                    {/* <SelectItem value="deepgram">☁️ Deepgram (Backup)</SelectItem>
-                                    <SelectItem value="elevenLabs">☁️ ElevenLabs</SelectItem>
+                                    <SelectItem value="deepgram">☁️ Deepgram (Default - Cloud streaming + diarization)</SelectItem>
+                                    <SelectItem value="parakeet">⚡ Parakeet (Local - Real-time / Accurate)</SelectItem>
+                                    <SelectItem value="localWhisper">🏠 Local Whisper (Local - High Accuracy)</SelectItem>
+                                    {/* <SelectItem value="elevenLabs">☁️ ElevenLabs</SelectItem>
                                     <SelectItem value="groq">☁️ Groq</SelectItem>
                                     <SelectItem value="openai">☁️ OpenAI</SelectItem> */}
                                 </SelectContent>
@@ -136,6 +145,9 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
                                     onValueChange={(value) => {
                                         const model = value as TranscriptModelProps['model'];
                                         setTranscriptModelConfig({ ...transcriptModelConfig, provider: uiProvider, model });
+                                        // Centura Capture (M2): persist cloud model selection immediately.
+                                        invoke('api_save_transcript_config', { provider: uiProvider, model, apiKey: null })
+                                            .catch((e) => console.error('Failed to save transcript config', e));
                                     }}
                                 >
                                     <SelectTrigger className='focus:ring-1 focus:ring-blue-500 focus:border-blue-500'>

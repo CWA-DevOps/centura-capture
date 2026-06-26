@@ -22,6 +22,10 @@ pub struct TranscriptSegment {
     pub display_time: String,   // Formatted time for display like "[02:15]"
     pub confidence: f32,
     pub sequence_id: u64,
+    // Centura Capture (M2): diarization speaker label (e.g. "Speaker 1"); None for
+    // local engines that don't diarize. Persisted into transcripts.json.
+    #[serde(default)]
+    pub speaker: Option<String>,
 }
 
 /// Meeting metadata structure
@@ -129,6 +133,7 @@ impl RecordingSaver {
             display_time: "[00:00]".to_string(),
             confidence: 1.0,
             sequence_id: 0,
+            speaker: None,
         };
         self.add_transcript_segment(segment);
     }
