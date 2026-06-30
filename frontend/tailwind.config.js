@@ -54,6 +54,14 @@ module.exports = {
   				'3': 'hsl(var(--chart-3))',
   				'4': 'hsl(var(--chart-4))',
   				'5': 'hsl(var(--chart-5))'
+  			},
+  			centura: {
+  				DEFAULT: '#03639B',
+  				blue: '#03639B',
+  				green: '#1B904F',
+  				nickel: '#727376',
+  				gainsboro: '#E0DFD7',
+  				saffron: '#E5C02D'
   			}
   		},
   		borderRadius: {

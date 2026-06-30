@@ -79,7 +79,7 @@
 @layer base {
   :root {
     /* Centura Capture theme: warm cream page, white cards, Gainsboro borders, Sea Blue accents */
-    --background: 48 44% 96%;        /* warm cream (~#FAF8F2) */
+    --background: 40 36% 91%;        /* warm cream (~#F1ECE0, clearly cream) */
     --foreground: 0 0% 12%;
     --card: 0 0% 100%;               /* white cards */
     --card-foreground: 0 0% 12%;
