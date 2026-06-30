@@ -1,4 +1,5 @@
 import { VirtualizedTranscriptView } from '@/components/VirtualizedTranscriptView';
+import { HomeDashboard } from '@/components/HomeDashboard';
 import { PermissionWarning } from '@/components/PermissionWarning';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
@@ -102,22 +103,26 @@ export function TranscriptPanel({
         </div>
       )}
 
-      {/* Transcript content */}
-      <div className="pb-20">
-        <div className="flex justify-center">
-          <div className="w-2/3 max-w-[750px]">
-            <VirtualizedTranscriptView
-              segments={segments}
-              isRecording={isRecording}
-              isPaused={isPaused}
-              isProcessing={isProcessingStop}
-              isStopping={isStopping}
-              enableStreaming={isRecording}
-              showConfidence={true}
-            />
+      {/* Home dashboard when idle (no recording, no transcripts); otherwise the transcript view */}
+      {!isRecording && segments.length === 0 ? (
+        <HomeDashboard />
+      ) : (
+        <div className="pb-20">
+          <div className="flex justify-center">
+            <div className="w-2/3 max-w-[750px]">
+              <VirtualizedTranscriptView
+                segments={segments}
+                isRecording={isRecording}
+                isPaused={isPaused}
+                isProcessing={isProcessingStop}
+                isStopping={isStopping}
+                enableStreaming={isRecording}
+                showConfidence={true}
+              />
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
