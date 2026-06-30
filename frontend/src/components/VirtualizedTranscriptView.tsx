@@ -264,8 +264,13 @@ export const VirtualizedTranscriptView: React.FC<VirtualizedTranscriptViewProps>
                         </>
                     ) : (
                         <>
-                            <p className="text-lg font-semibold">Welcome to Centura Capture!</p>
-                            <p className="text-xs mt-1">Start recording to see live transcription</p>
+                            <p className="text-xl font-semibold text-gray-800">Ready to capture</p>
+                            <p className="text-sm mt-1 text-gray-600">
+                                Press the <span className="font-medium text-centura-saffron">gold record button</span> below to start live transcription.
+                            </p>
+                            <p className="text-xs mt-3 text-gray-400">
+                                Audio is never saved — only the transcript. Notes are written to your CenturaOS vault.
+                            </p>
                         </>
                     )}
                 </motion.div>

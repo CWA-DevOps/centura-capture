@@ -397,11 +397,11 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
                             handleStartRecording();
                           }}
                           disabled={isStarting || isProcessing || isRecordingDisabled || isValidatingModel}
-                          className={`w-12 h-12 flex items-center justify-center ${isStarting || isProcessing || isValidatingModel ? 'bg-gray-400' : 'bg-red-500 hover:bg-red-600'
-                            } rounded-full text-white transition-colors relative`}
+                          className={`w-12 h-12 flex items-center justify-center ${isStarting || isProcessing || isValidatingModel ? 'bg-gray-400 text-white' : 'bg-centura-saffron hover:bg-centura-saffron/90 text-gray-900'
+                            } rounded-full transition-colors relative shadow`}
                         >
                           {isValidatingModel ? (
-                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                            <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-900"></div>
                           ) : (
                             <Mic size={20} />
                           )}
