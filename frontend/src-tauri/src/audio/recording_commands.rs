@@ -819,6 +819,9 @@ pub async fn stop_recording<R: Runtime>(
         let meeting_folder = manager.get_meeting_folder();
         let meeting_name = manager.get_meeting_name();
 
+        // Centura Capture (M3): capture transcript segments for the vault export.
+        let vault_segments = manager.get_transcript_segments();
+
         match tokio::time::timeout(
             tokio::time::Duration::from_secs(300), // 5 minutes max for file I/O
             manager.save_recording_only(&app)
@@ -836,6 +839,22 @@ pub async fn stop_recording<R: Runtime>(
             Err(_) => {
                 warn!("⏱️ File I/O timeout (5 minutes) reached during save, continuing shutdown");
                 // Don't fail shutdown - transcripts are already preserved
+            }
+        }
+
+        // Centura Capture (M3): write the transcript + paired note into the CenturaOS
+        // vault so the meeting-notes-synthesizer can process them. Best-effort; never
+        // fails shutdown.
+        if let Some(ref name) = meeting_name {
+            match crate::audio::vault_export::export_meeting(name, &vault_segments) {
+                Ok(Some(res)) => {
+                    info!("✅ Vault export complete");
+                    let _ = app.emit("vault-exported", serde_json::json!({
+                        "transcript_path": res.transcript_path.to_string_lossy(),
+                    }));
+                }
+                Ok(None) => info!("ℹ️ Vault export skipped (no transcript segments)"),
+                Err(e) => warn!("⚠️ Vault export failed: {}", e),
             }
         }
 

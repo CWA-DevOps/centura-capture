@@ -11,11 +11,19 @@ export default {
       colors: {
         background: "var(--background)",
         foreground: "var(--foreground)",
-        // Consistent color palette
-        primary: "hsl(221, 83%, 53%)", // blue-600
+        // Centura Wealth Advisory brand palette
+        primary: "#03639B",   // Sea Blue (brand primary accent)
         secondary: "hsl(210, 40%, 96%)", // gray-50
-        accent: "hsl(221, 83%, 53%)", // blue-600
+        accent: "#03639B",    // Sea Blue
         destructive: "hsl(0, 84%, 60%)", // red-500
+        centura: {
+          DEFAULT: "#03639B",
+          blue: "#03639B",     // Sea Blue
+          green: "#1B904F",    // Green
+          nickel: "#727376",   // Nickel (neutral)
+          gainsboro: "#E0DFD7",// Gainsboro (light surface)
+          saffron: "#E5C02D",  // Saffron (highlight)
+        },
       },
       fontSize: {
         'display': ['32px', { lineHeight: '1.2', fontWeight: '700' }],

@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Switch } from '@/components/ui/switch';
-import { FolderOpen } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { DeviceSelection, SelectedDevices } from '@/components/DeviceSelection';
 import Analytics from '@/lib/analytics';
@@ -18,10 +17,14 @@ interface RecordingSettingsProps {
   onSave?: (preferences: RecordingPreferences) => void;
 }
 
+// Centura Capture: audio is never saved to disk (transcription-only), so this panel
+// is just device selection + the recording-start notification. The save_folder /
+// auto_save / file_format fields are kept in state for the backend prefs payload but
+// are not user-configurable here.
 export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   const [preferences, setPreferences] = useState<RecordingPreferences>({
     save_folder: '',
-    auto_save: true,
+    auto_save: false,
     file_format: 'mp4',
     preferred_mic_device: null,
     preferred_system_device: null
@@ -38,13 +41,6 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
         setPreferences(prefs);
       } catch (error) {
         console.error('Failed to load recording preferences:', error);
-        // If loading fails, get default folder path
-        try {
-          const defaultPath = await invoke<string>('get_default_recordings_folder_path');
-          setPreferences(prev => ({ ...prev, save_folder: defaultPath }));
-        } catch (defaultError) {
-          console.error('Failed to get default folder path:', defaultError);
-        }
       } finally {
         setLoading(false);
       }
@@ -68,17 +64,6 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     loadNotificationPref();
   }, []);
 
-  const handleAutoSaveToggle = async (enabled: boolean) => {
-    const newPreferences = { ...preferences, auto_save: enabled };
-    setPreferences(newPreferences);
-    await savePreferences(newPreferences);
-
-    // Track auto-save setting change
-    await Analytics.track('auto_save_recording_toggled', {
-      enabled: enabled.toString()
-    });
-  };
-
   const handleDeviceChange = async (devices: SelectedDevices) => {
     const newPreferences = {
       ...preferences,
@@ -88,20 +73,10 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     setPreferences(newPreferences);
     await savePreferences(newPreferences);
 
-    // Track default device preference changes
-    // Note: Individual device selection analytics are tracked in DeviceSelection component
     await Analytics.track('default_devices_changed', {
       has_preferred_microphone: (!!devices.micDevice).toString(),
       has_preferred_system_audio: (!!devices.systemDevice).toString()
     });
-  };
-
-  const handleOpenFolder = async () => {
-    try {
-      await invoke('open_recordings_folder');
-    } catch (error) {
-      console.error('Failed to open recordings folder:', error);
-    }
   };
 
   const handleNotificationToggle = async (enabled: boolean) => {
@@ -126,8 +101,6 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
     try {
       await invoke('set_recording_preferences', { preferences: prefs });
       onSave?.(prefs);
-
-      // Show success toast with device details
       const micDevice = prefs.preferred_mic_device || 'Default';
       const systemDevice = prefs.preferred_system_device || 'Default';
       toast.success("Device preferences saved", {
@@ -153,99 +126,39 @@ export function RecordingSettings({ onSave }: RecordingSettingsProps) {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 pt-6">
       <div>
-        <h3 className="text-lg font-semibold mb-4">Recording Settings</h3>
-        <p className="text-sm text-gray-600 mb-6">
-          Configure how your audio recordings are saved during meetings.
+        <h3 className="text-lg font-semibold mb-1">Audio Devices</h3>
+        <p className="text-sm text-gray-600">
+          Choose the microphone and system audio captured during meetings. Centura Capture transcribes
+          live and never saves the audio to disk.
         </p>
       </div>
 
-      {/* Auto Save Toggle */}
-      <div className="flex items-center justify-between p-4 border rounded-lg">
-        <div className="flex-1">
-          <div className="font-medium">Save Audio Recordings</div>
-          <div className="text-sm text-gray-600">
-            Automatically save audio files when recording stops
-          </div>
-        </div>
-        <Switch
-          checked={preferences.auto_save}
-          onCheckedChange={handleAutoSaveToggle}
+      {/* Device Preferences */}
+      <div className="border rounded-lg p-4 bg-gray-50">
+        <DeviceSelection
+          selectedDevices={{
+            micDevice: preferences.preferred_mic_device,
+            systemDevice: preferences.preferred_system_device
+          }}
+          onDeviceChange={handleDeviceChange}
           disabled={saving}
         />
       </div>
-
-      {/* Folder Location - Only shown when auto_save is enabled */}
-      {preferences.auto_save && (
-        <div className="space-y-4">
-          <div className="p-4 border rounded-lg bg-gray-50">
-            <div className="font-medium mb-2">Save Location</div>
-            <div className="text-sm text-gray-600 mb-3 break-all">
-              {preferences.save_folder || 'Default folder'}
-            </div>
-            <button
-              onClick={handleOpenFolder}
-              className="flex items-center gap-2 px-3 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50 transition-colors"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Open Folder
-            </button>
-          </div>
-
-          <div className="p-4 border rounded-lg bg-blue-50">
-            <div className="text-sm text-blue-800">
-              <strong>File Format:</strong> {preferences.file_format.toUpperCase()} files
-            </div>
-            <div className="text-xs text-blue-600 mt-1">
-              Recordings are saved with timestamp: recording_YYYYMMDD_HHMMSS.{preferences.file_format}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Info when auto_save is disabled */}
-      {!preferences.auto_save && (
-        <div className="p-4 border rounded-lg bg-yellow-50">
-          <div className="text-sm text-yellow-800">
-            Audio recording is disabled. Enable "Save Audio Recordings" to automatically save your meeting audio.
-          </div>
-        </div>
-      )}
 
       {/* Recording Notification Toggle */}
       <div className="flex items-center justify-between p-4 border rounded-lg">
         <div className="flex-1">
           <div className="font-medium">Recording Start Notification</div>
           <div className="text-sm text-gray-600">
-            Show reminder to inform participants when recording starts
+            Show a reminder to inform participants when recording starts
           </div>
         </div>
         <Switch
           checked={showRecordingNotification}
           onCheckedChange={handleNotificationToggle}
         />
-      </div>
-
-      {/* Device Preferences */}
-      <div className="space-y-4">
-        <div className="border-t pt-6">
-          <h4 className="text-base font-medium text-gray-900 mb-4">Default Audio Devices</h4>
-          <p className="text-sm text-gray-600 mb-4">
-            Set your preferred microphone and system audio devices for recording. These will be automatically selected when starting new recordings.
-          </p>
-
-          <div className="border rounded-lg p-4 bg-gray-50">
-            <DeviceSelection
-              selectedDevices={{
-                micDevice: preferences.preferred_mic_device,
-                systemDevice: preferences.preferred_system_device
-              }}
-              onDeviceChange={handleDeviceChange}
-              disabled={saving}
-            />
-          </div>
-        </div>
       </div>
     </div>
   );
