@@ -163,6 +163,50 @@ export function useModalState(transcriptModelConfig?: TranscriptModelProps): Use
     };
   }, [showModal]);
 
+  // Non-fatal notices: Deepgram fallback warnings + vault export outcomes.
+  // (transcription-warning must NOT stop the recording — the local engine has
+  // taken over and transcription continues.)
+  useEffect(() => {
+    const unlistenFns: (() => void)[] = [];
+
+    const setupNoticeListeners = async () => {
+      try {
+        unlistenFns.push(
+          await listen<string>('transcription-warning', (event) => {
+            toast.warning('Transcription notice', {
+              description: String(event.payload),
+              duration: 8000,
+            });
+          })
+        );
+        unlistenFns.push(
+          await listen<{ transcript_path: string }>('vault-exported', (event) => {
+            toast.success('Transcript saved to vault', {
+              description: event.payload.transcript_path,
+              duration: 5000,
+            });
+          })
+        );
+        unlistenFns.push(
+          await listen<{ error: string }>('vault-export-failed', (event) => {
+            toast.error('Vault export failed', {
+              description: `The transcript is still in the app, but it did not reach the vault Inbox: ${event.payload.error}`,
+              duration: 10000,
+            });
+          })
+        );
+      } catch (error) {
+        console.error('Failed to setup notice listeners:', error);
+      }
+    };
+
+    setupNoticeListeners();
+
+    return () => {
+      unlistenFns.forEach((fn) => fn());
+    };
+  }, []);
+
   // Listen for model download completion to auto-close modal
   useEffect(() => {
     const setupDownloadListeners = async () => {

@@ -13,6 +13,91 @@ pub struct SpeechSegment {
     pub confidence: f32,
 }
 
+/// Stateful 3:1 FIR decimator (48 kHz → 16 kHz) with proper anti-aliasing.
+///
+/// Centura Capture (R4): this replaces the old ~2-tap moving-average + linear
+/// interpolation path for the standard 48 kHz pipeline input. That weak filter
+/// aliased the 8–16 kHz band into the audio Deepgram transcribes (VAD segments
+/// are forwarded verbatim at 16 kHz), measurably hurting accuracy. Filter state
+/// persists across batches, so consecutive `process` calls are seamless.
+struct Decimator3 {
+    taps: Vec<f32>,
+    /// Last `taps.len() - 1` input samples from the previous call (filter history).
+    history: Vec<f32>,
+    /// Input-sample phase within the 3:1 decimation cycle (0..3).
+    phase: usize,
+}
+
+impl Decimator3 {
+    fn new() -> Self {
+        // Windowed-sinc low-pass: 63 taps, Blackman window (~74 dB stopband),
+        // cutoff 7.2 kHz at 48 kHz input (0.9 × the 8 kHz target Nyquist).
+        const TAPS: usize = 63;
+        const PI: f32 = std::f32::consts::PI;
+        let fc = 7200.0 / 48000.0; // normalized cutoff (cycles per input sample)
+        let m = (TAPS - 1) as f32;
+        let mut taps = Vec::with_capacity(TAPS);
+        let mut sum = 0.0f32;
+        for i in 0..TAPS {
+            let n = i as f32 - m / 2.0;
+            let sinc = if n == 0.0 {
+                2.0 * fc
+            } else {
+                (2.0 * PI * fc * n).sin() / (PI * n)
+            };
+            let window = 0.42 - 0.5 * (2.0 * PI * i as f32 / m).cos()
+                + 0.08 * (4.0 * PI * i as f32 / m).cos();
+            let t = sinc * window;
+            sum += t;
+            taps.push(t);
+        }
+        // Normalize to unity DC gain.
+        for t in taps.iter_mut() {
+            *t /= sum;
+        }
+        Self {
+            history: vec![0.0; TAPS - 1],
+            taps,
+            phase: 0,
+        }
+    }
+
+    /// Low-pass filter + take every 3rd sample. ~1M multiply-adds per second of
+    /// audio — negligible CPU. Group delay is (63-1)/2 = 31 samples ≈ 0.65 ms.
+    fn process(&mut self, input: &[f32]) -> Vec<f32> {
+        if input.is_empty() {
+            return Vec::new();
+        }
+        let taps_len = self.taps.len();
+
+        // Work buffer = filter history + new input.
+        let mut buf = Vec::with_capacity(self.history.len() + input.len());
+        buf.extend_from_slice(&self.history);
+        buf.extend_from_slice(input);
+
+        let mut out = Vec::with_capacity(input.len() / 3 + 1);
+        for i in 0..input.len() {
+            if self.phase == 0 {
+                // Newest input sample i sits under the end of the filter window
+                // buf[i .. i + taps_len].
+                let mut acc = 0.0f32;
+                for (k, &t) in self.taps.iter().enumerate() {
+                    acc += t * buf[i + k];
+                }
+                out.push(acc);
+            }
+            self.phase = (self.phase + 1) % 3;
+        }
+
+        // Carry the tail forward as history for the next batch.
+        let keep = taps_len - 1;
+        let start = buf.len().saturating_sub(keep);
+        self.history.clear();
+        self.history.extend_from_slice(&buf[start..]);
+        out
+    }
+}
+
 /// Processes audio in 30ms chunks but returns complete speech segments
 pub struct ContinuousVadProcessor {
     session: VadSession,
@@ -26,6 +111,8 @@ pub struct ContinuousVadProcessor {
     speech_start_sample: usize,
     // State tracking for smart logging
     last_logged_state: bool,
+    /// High-quality stateful resampler for the standard 48 kHz input path.
+    decimator: Option<Decimator3>,
 }
 
 impl ContinuousVadProcessor {
@@ -67,6 +154,21 @@ impl ContinuousVadProcessor {
         info!("VAD processor created: input={}Hz, vad={}Hz, chunk_size={} samples",
               input_sample_rate, VAD_SAMPLE_RATE, vad_chunk_size);
 
+        // Standard pipeline input is 48 kHz → exact 3:1 decimation with a real
+        // anti-aliasing filter. Other non-16k rates (should not occur) fall back
+        // to the legacy resampler in resample_to_16k().
+        let decimator = if input_sample_rate == 48000 {
+            Some(Decimator3::new())
+        } else {
+            if input_sample_rate != 16000 {
+                warn!(
+                    "VAD input rate {} Hz is neither 48000 nor 16000 — using legacy resampler",
+                    input_sample_rate
+                );
+            }
+            None
+        };
+
         Ok(Self {
             session,
             chunk_size: vad_chunk_size,
@@ -79,15 +181,20 @@ impl ContinuousVadProcessor {
             speech_start_sample: 0,
             // Initialize state tracking
             last_logged_state: false,
+            decimator,
         })
     }
 
     /// Process incoming audio samples and return any complete speech segments
     /// Handles resampling from input sample rate to 16kHz for VAD processing
     pub fn process_audio(&mut self, samples: &[f32]) -> Result<Vec<SpeechSegment>> {
-        // Resample to 16kHz if needed
+        // Resample to 16kHz if needed. 48 kHz (the standard pipeline rate) uses
+        // the stateful anti-aliased decimator; this audio is what VAD segments —
+        // and therefore Deepgram — are built from, so quality matters here.
         let resampled_audio = if self.sample_rate == 16000 {
             samples.to_vec()
+        } else if let Some(decimator) = self.decimator.as_mut() {
+            decimator.process(samples)
         } else {
             self.resample_to_16k(samples)?
         };
@@ -109,8 +216,10 @@ impl ContinuousVadProcessor {
         Ok(completed_segments)
     }
 
-    /// Improved resampling from input sample rate to 16kHz with anti-aliasing
-    /// Uses linear interpolation and basic low-pass filtering for better quality
+    /// LEGACY fallback resampler for non-48 kHz input rates only (48 kHz uses the
+    /// stateful `Decimator3` — see process_audio). Weak anti-aliasing: a capped
+    /// moving-average + linear interpolation. Kept for exotic rates that should
+    /// not occur in the current pipeline.
     fn resample_to_16k(&self, samples: &[f32]) -> Result<Vec<f32>> {
         if self.sample_rate == 16000 {
             return Ok(samples.to_vec());

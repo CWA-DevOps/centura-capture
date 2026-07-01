@@ -82,7 +82,15 @@ recorded_at: {recorded_at}\n\
     let inbox = root.join("Inbox");
     fs::create_dir_all(&inbox)?;
 
-    let transcript_path = inbox.join(format!("{stem}.md"));
+    // Never overwrite an existing transcript (two same-titled meetings in one
+    // day collide on the slug). Suffix " (2)", " (3)"… — matches the synthesis
+    // prompt's collision convention.
+    let mut transcript_path = inbox.join(format!("{stem}.md"));
+    let mut n = 2;
+    while transcript_path.exists() {
+        transcript_path = inbox.join(format!("{stem} ({n}).md"));
+        n += 1;
+    }
     fs::write(&transcript_path, transcript_md)?;
 
     log::info!("📥 Vault export: transcript -> {}", transcript_path.display());
@@ -161,5 +169,8 @@ fn slugify(input: &str) -> String {
 
 /// Minimal YAML double-quoted-string escaping for the title field.
 fn yaml_escape(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('"', "\\\"")
+    s.replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }

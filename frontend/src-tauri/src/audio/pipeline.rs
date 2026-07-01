@@ -721,10 +721,12 @@ impl AudioPipeline {
 
         // Create VAD processor with balanced redemption time for speech accumulation
         // The VAD processor now handles 48kHz->16kHz resampling internally
-        // This bridges natural pauses without excessive fragmentation
-        // For mac os core audio, 900ms, for windows 400ms seems good
+        // Centura Capture (R4): 500ms bridges natural sentence pauses (500-700ms
+        // is common between turns) so utterances aren't fragmented — Deepgram
+        // keeps more language-model context per segment. Cost: <0.1% more billed
+        // audio from the extra bridged silence.
 
-        let redemption_time = if cfg!(target_os = "macos") { 400 } else { 400 };
+        let redemption_time = if cfg!(target_os = "macos") { 500 } else { 500 };
 
         let vad_processor = match ContinuousVadProcessor::new(sample_rate, redemption_time) {
             Ok(processor) => {

@@ -854,7 +854,15 @@ pub async fn stop_recording<R: Runtime>(
                     }));
                 }
                 Ok(None) => info!("ℹ️ Vault export skipped (no transcript segments)"),
-                Err(e) => warn!("⚠️ Vault export failed: {}", e),
+                Err(e) => {
+                    warn!("⚠️ Vault export failed: {}", e);
+                    // Surface the failure — the transcript is still in the app DB,
+                    // but it did NOT reach the vault Inbox.
+                    let _ = app.emit(
+                        "vault-export-failed",
+                        serde_json::json!({ "error": e.to_string() }),
+                    );
+                }
             }
         }
 

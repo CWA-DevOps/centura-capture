@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface TranscriptModelProps {
@@ -18,13 +18,18 @@ export interface TranscriptSettingsProps {
 // unavailable, but there's nothing to configure here — the API key comes from .env.
 export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelConfig }: TranscriptSettingsProps) {
     // Ensure the stored provider is Deepgram (no model-manager UI to set it anymore).
+    // Fire-once guard: if the save fails or the parent re-renders before state
+    // settles, don't re-trigger the migration on every render.
+    const migratedRef = useRef(false);
     useEffect(() => {
-        if (transcriptModelConfig.provider !== 'deepgram') {
-            const cfg: TranscriptModelProps = { provider: 'deepgram', model: 'nova-3', apiKey: null };
-            setTranscriptModelConfig(cfg);
-            invoke('api_save_transcript_config', { provider: 'deepgram', model: 'nova-3', apiKey: null })
-                .catch((e) => console.error('Failed to set Deepgram as transcript provider', e));
+        if (migratedRef.current || transcriptModelConfig.provider === 'deepgram') {
+            return;
         }
+        migratedRef.current = true;
+        const cfg: TranscriptModelProps = { provider: 'deepgram', model: 'nova-3', apiKey: null };
+        setTranscriptModelConfig(cfg);
+        invoke('api_save_transcript_config', { provider: 'deepgram', model: 'nova-3', apiKey: null })
+            .catch((e) => console.error('Failed to set Deepgram as transcript provider', e));
     }, [transcriptModelConfig.provider, setTranscriptModelConfig]);
 
     return (
