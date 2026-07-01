@@ -2,8 +2,9 @@
 //
 // Centura Capture (M2): Deepgram live streaming STT backend.
 //
-// Opens one WebSocket per meeting to Deepgram's streaming API with diarization
-// (diarize=true) and no-retention (mip_opt_out=true). Audio frames come from the
+// Opens one WebSocket per meeting to Deepgram's streaming API WITHOUT diarization
+// (diarize=false — plain transcript; speaker labels were unreliable) and no-retention
+// (mip_opt_out=true). Audio frames come from the
 // existing VAD AudioChunk receiver (16 kHz mono f32), are converted to linear16,
 // and streamed up. Final results are parsed (text + speaker label) and emitted as
 // the same `transcript-update` event the local engines use, so the frontend is
@@ -93,7 +94,7 @@ pub async fn maybe_run_deepgram<R: Runtime>(
     };
 
     info!(
-        "🌐 Deepgram: connecting (model='{}', language='{}', diarize=true, mip_opt_out=true)",
+        "🌐 Deepgram: connecting (model='{}', language='{}', diarize=false, mip_opt_out=true)",
         model, LANGUAGE
     );
 
@@ -128,7 +129,7 @@ async fn connect(key: &str, model: &str) -> Result<WsStream, String> {
 &channels=1\
 &punctuate=true\
 &smart_format=true\
-&diarize=true\
+&diarize=false\
 &interim_results=false\
 &mip_opt_out=true"
     );

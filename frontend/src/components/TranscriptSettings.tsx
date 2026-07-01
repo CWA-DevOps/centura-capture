@@ -39,7 +39,7 @@ export function TranscriptSettings({ transcriptModelConfig, setTranscriptModelCo
             <div className="rounded-lg border border-gray-200 p-4 bg-centura-gainsboro/30">
                 <div className="flex items-center gap-2">
                     <span className="inline-block w-2 h-2 rounded-full bg-centura-green" />
-                    <span className="font-medium text-centura-blue">Deepgram — cloud streaming + diarization</span>
+                    <span className="font-medium text-centura-blue">Deepgram — cloud streaming transcription</span>
                 </div>
                 <dl className="mt-3 text-sm text-gray-700 space-y-1">
                     <div className="flex gap-2">
