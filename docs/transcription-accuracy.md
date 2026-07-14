@@ -13,13 +13,15 @@ that risk today.
 - **The verbatim transcript is always archived** at `Meetings/Synthesized/<stem>.md` after synthesis.
   If a note looks off, the source text is there to check.
 - **No audio is saved** (M1), so the only artifact to verify against is the text transcript.
+- **Keyterm boosting is enabled** — `DEEPGRAM_KEYTERMS` in `frontend/src-tauri/.env` feeds a
+  comma-separated firm-vocabulary list (names, vendors, jargon) to Deepgram's `keyterm` prompting on
+  nova-3 (free; ≤500 tokens total, ~20–50 terms is the sweet spot). Edit the list and restart the
+  app to reload. This is the highest-leverage accuracy lever.
 
 ## Not enabled (yet)
 
-These were considered and deferred — turn on later if accuracy bites:
+Considered and deferred — turn on later if accuracy bites:
 
-- **Keyterm boosting** — give Deepgram a list of firm/people/product names to reduce mishears
-  (Deepgram `keyterm` on nova-3). Highest-leverage accuracy improvement.
 - **Review gate** — mark synthesized notes `status: needs-review` until a human approves, so nothing
   is auto-trusted as context downstream.
 
@@ -27,4 +29,4 @@ These were considered and deferred — turn on later if accuracy bites:
 
 Don't treat a synthesized note as authoritative for compliance-sensitive facts (figures, commitments,
 client instructions) without a glance at the archived transcript. If accuracy becomes a recurring
-problem, enabling keyterm boosting is the first step.
+problem, tuning the `DEEPGRAM_KEYTERMS` list is the first step.

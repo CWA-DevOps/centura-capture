@@ -11,7 +11,11 @@ only the live PCM stream needed for transcription.
 
 - **Audio content:** mixed microphone + system audio, 16 kHz mono.
 - **Destination:** Deepgram's API (United States region).
-- **Returned:** text transcript with generic speaker labels (`diarize=true`).
+- **Returned:** plain text transcript with **no speaker labels** (`diarize=false`). Server-side
+  diarization was tried and turned off — the labels were unreliable.
+- **Also sent:** the request URL carries the firm-vocabulary keyterm list from `DEEPGRAM_KEYTERMS`
+  in `.env` (names, vendors, jargon used to bias recognition). Treat the list itself as data that
+  leaves the device; keep client names out of it until client use is cleared.
 
 ## Retention / training controls
 
