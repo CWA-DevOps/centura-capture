@@ -29,7 +29,7 @@ export function About() {
             <div className="text-center">
                 <div className="mb-3">
                     <Image
-                        src="icon_128x128.png"
+                        src="/logo-collapsed.png"
                         alt="Centura Capture"
                         width={64}
                         height={64}
@@ -50,8 +50,9 @@ export function About() {
                 <h2 className="text-base font-semibold text-gray-800">How your meeting data flows</h2>
                 <div className="grid grid-cols-2 gap-2">
                     <FlowCard title="Transcription">
-                        Meeting audio streams to Deepgram for transcription, with no-retention requested.
-                        If Deepgram is unavailable, the app transcribes on this computer instead.
+                        Meeting audio streams to Deepgram for transcription. The app opts out of
+                        Deepgram&apos;s model-improvement program, so Deepgram keeps the audio only while
+                        processing it. If Deepgram is unavailable, the app transcribes on this computer.
                     </FlowCard>
                     <FlowCard title="No saved audio">
                         The app never writes meeting audio to disk. It keeps only the text transcript.
@@ -61,7 +62,8 @@ export function About() {
                         synthesis into meeting notes.
                     </FlowCard>
                     <FlowCard title="Local records">
-                        Transcripts and meeting history stay on this computer.
+                        Transcripts and meeting history are stored on this computer. If you choose a
+                        cloud AI provider for summaries, the transcript goes to that provider.
                     </FlowCard>
                 </div>
             </div>

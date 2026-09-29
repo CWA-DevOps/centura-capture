@@ -343,6 +343,8 @@ pub async fn start_recording_with_meeting_name<R: Runtime>(
             "phase": "startup"
         }));
 
+        // A tray-initiated start set the menu to "Starting..."; restore it.
+        crate::tray::update_tray_menu(&app);
         return Err(validation_error);
     }
     info!("✅ Transcription model validation passed");
@@ -540,6 +542,8 @@ pub async fn start_recording_with_devices_and_meeting<R: Runtime>(
             "phase": "startup"
         }));
 
+        // A tray-initiated start set the menu to "Starting..."; restore it.
+        crate::tray::update_tray_menu(&app);
         return Err(validation_error);
     }
     info!("✅ Transcription model validation passed");
@@ -847,7 +851,9 @@ pub async fn stop_recording<R: Runtime>(
     };
 
     match config.as_deref() {
-        Some("parakeet") => {
+        // Centura Capture: "deepgram" loads Parakeet only when it falls back; the
+        // unload is a no-op when Deepgram handled the meeting.
+        Some("parakeet") | Some("deepgram") => {
             info!("🦜 Unloading Parakeet model...");
             let engine_clone = {
                 let engine_guard = crate::parakeet_engine::commands::PARAKEET_ENGINE

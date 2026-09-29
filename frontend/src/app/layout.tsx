@@ -132,8 +132,8 @@ export default function RootLayout({
     const betaFeatures = loadBetaFeatures();
 
     if (!betaFeatures.importAndRetranscribe) {
-      toast.error('Beta feature disabled', {
-        description: 'Enable "Import Audio & Retranscribe" in Settings > Beta to use this feature.'
+      toast.info('Audio import is not available in Centura Capture', {
+        description: 'Centura Capture never keeps meeting audio, so imported audio files are not supported.'
       });
       return;
     }

@@ -185,6 +185,14 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
     }
   }, [onRecordingStop]);
 
+  // Latest stop action and state for the once-registered event listeners below.
+  const stopActionRef = useRef(stopRecordingAction);
+  const stopStateRef = useRef({ isRecording, isStopping, onStopInitiated });
+  useEffect(() => {
+    stopActionRef.current = stopRecordingAction;
+    stopStateRef.current = { isRecording, isStopping, onStopInitiated };
+  });
+
   const handleStopRecording = useCallback(async () => {
     console.log('handleStopRecording called - isRecording:', isRecording, 'isStarting:', isStarting, 'isStopping:', isStopping, 'isStartingRecording:', isStartingRecording);
     if (!isRecording || isStarting || isStopping || isStartingRecording) {
@@ -296,9 +304,19 @@ export const RecordingControls: React.FC<RecordingControlsProps> = ({
           // Emitters that omit `phase` (e.g. deepgram.rs connection-lost) still
           // stop the recording instead of leaving the UI stuck in a recording
           // state with no transcription running.
+          // The stop must reach the backend: onRecordingStop(false) alone only resets
+          // the UI, leaving Rust recording with the mic open and the vault export
+          // never run, so the meeting would never reach the Inbox.
           if (event.payload.phase !== 'startup') {
-            console.log('Calling onRecordingStop(false) due to active transcription error');
-            onRecordingStop(false);
+            const { isRecording: recordingNow, isStopping: stoppingNow, onStopInitiated: notifyStop } = stopStateRef.current;
+            if (recordingNow && !stoppingNow) {
+              console.log('Stopping the backend recording due to active transcription error');
+              notifyStop?.();
+              setIsStopping(true);
+              void stopActionRef.current();
+            } else if (!stoppingNow) {
+              onRecordingStop(false);
+            }
           }
 
           // For actionable errors (like model loading failures), the main page will handle showing the model selector

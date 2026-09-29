@@ -246,7 +246,7 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
             let existing = {
                 let guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
                     .lock()
-                    .unwrap();
+                    .unwrap_or_else(|e| e.into_inner());
                 guard.as_ref().cloned()
             };
             let ready = match &existing {
@@ -264,7 +264,7 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
             let engine = {
                 let guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
                     .lock()
-                    .unwrap();
+                    .unwrap_or_else(|e| e.into_inner());
                 guard.as_ref().cloned()
             };
             match engine {

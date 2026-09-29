@@ -7,25 +7,27 @@ import { useOnboarding } from '@/contexts/OnboardingContext';
 export function WelcomeStep() {
   const { goNext } = useOnboarding();
 
+  // Centura Capture: these claims must match the real data flow (audio streams to
+  // Deepgram's cloud; nothing audio is saved; transcripts go to the vault).
   const features = [
     {
       icon: Lock,
-      title: 'Your data never leaves your device',
+      title: 'Meeting audio is never saved to disk',
     },
     {
       icon: Sparkles,
-      title: 'Intelligent summaries & insights',
+      title: 'Live transcription by Deepgram, with on-device fallback',
     },
     {
       icon: Cpu,
-      title: 'Works offline, no cloud required',
+      title: 'Transcripts go to your CenturaOS vault Inbox',
     },
   ];
 
   return (
     <OnboardingContainer
-      title="Welcome to Meetily"
-      description="Record. Transcribe. Summarize. All on your device."
+      title="Welcome to Centura Capture"
+      description="Live meeting transcription for Centura Wealth Advisory."
       step={1}
       hideProgress={true}
     >

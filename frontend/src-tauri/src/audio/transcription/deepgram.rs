@@ -13,10 +13,12 @@
 // the sweet spot). Free on nova-3.
 //
 // Robustness: if the WebSocket drops MID-meeting, we reconnect with exponential
-// backoff (up to RECONNECT_BUDGET). Audio keeps buffering in the unbounded channel
-// during the outage, so a successful reconnect loses nothing. If reconnection is
-// exhausted we emit a structured `transcription-error` (the UI stops the recording
-// cleanly and the partial transcript is saved + vault-exported).
+// backoff (up to RECONNECT_BUDGET). Audio queued during the outage buffers in the
+// unbounded channel and streams up after a successful reconnect. Audio already
+// sent on the dead socket that Deepgram had not yet finalized (up to about one
+// utterance) is lost. If reconnection is exhausted we emit a structured
+// `transcription-error`; the UI then runs a real stop, so the partial transcript
+// is saved and vault-exported.
 //
 // Fallback: if Deepgram is not the selected provider, no key is present, or the
 // FIRST connect fails, `maybe_run_deepgram` hands the receiver back so the caller
@@ -46,6 +48,8 @@ const RECONNECT_BUDGET: Duration = Duration::from_secs(120);
 /// Max wait for Deepgram to deliver final results + close after CloseStream,
 /// so a hung server can't stall stop_recording.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
+/// Max time for one WebSocket connect (TCP + TLS + HTTP upgrade).
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 // Sequence counter for Deepgram-emitted transcript updates (separate from the
 // local worker's counter; the two paths never run simultaneously). Never reset:
@@ -65,10 +69,10 @@ static SEQUENCE_COUNTER: AtomicU64 = AtomicU64::new(0);
 // `take_session_segments` at export time.
 static SESSION_SEGMENTS: Mutex<Vec<TranscriptSegment>> = Mutex::new(Vec::new());
 
-/// Drain the segments recorded for the current/last Deepgram session. Called by
-/// the vault export after the transcription task has finished (stop_recording
-/// awaits it), so the drain tail is already included. Empty when the session ran
-/// on the local fallback engine.
+/// Drain the segments recorded for the current/last session (Deepgram or the local
+/// fallback — both record here). Called by the vault export after the
+/// transcription task has finished (stop_recording awaits it), so the drain tail
+/// is already included.
 pub fn take_session_segments() -> Vec<TranscriptSegment> {
     match SESSION_SEGMENTS.lock() {
         Ok(mut segs) => std::mem::take(&mut *segs),
@@ -83,7 +87,9 @@ fn reset_session_segments() {
     }
 }
 
-fn record_session_segment(update: &TranscriptUpdate) {
+/// Also called by the local worker (worker.rs) so a Parakeet-fallback meeting's
+/// tail reaches the vault export too.
+pub(crate) fn record_session_segment(update: &TranscriptUpdate) {
     // Same shape the recording_commands transcript-update listener builds.
     let segment = TranscriptSegment {
         id: format!("seg_{}", update.sequence_id),
@@ -302,8 +308,12 @@ async fn connect(key: &str, model: &str) -> Result<WsStream, String> {
         .map_err(|e| format!("bad auth header: {}", e))?;
     request.headers_mut().insert("Authorization", auth);
 
-    let (ws, _resp) = tokio_tungstenite::connect_async(request)
+    // Bounded: behind a TLS-inspecting proxy or captive portal the upgrade can
+    // stall forever, which would block both the reconnect budget and the local
+    // fallback (neither runs until connect returns).
+    let (ws, _resp) = tokio::time::timeout(CONNECT_TIMEOUT, tokio_tungstenite::connect_async(request))
         .await
+        .map_err(|_| format!("websocket connect timed out after {:?}", CONNECT_TIMEOUT))?
         .map_err(|e| format!("websocket connect error: {}", e))?;
     Ok(ws)
 }

@@ -453,6 +453,30 @@ pub fn run() {
     // the app data dir (survives reinstalls), then a walk up from the working
     // dir. The exe-dir lookup matters because a launch from a pin or the
     // installer's finish page may not start in the install folder.
+    // A parse error stops dotenvy partway through a file (lines above it still
+    // load), so errors are logged — never with the offending line itself, which
+    // could be the API key line.
+    fn describe_env_error(e: &dotenvy::Error) -> String {
+        match e {
+            dotenvy::Error::LineParse(_, idx) => format!(
+                "parse error at character {} of a line (quote values that contain spaces)",
+                idx
+            ),
+            dotenvy::Error::Io(io) => format!("I/O error: {}", io.kind()),
+            _ => "environment variable error".to_string(),
+        }
+    }
+    // A blank DEEPGRAM_API_KEY from one file must not shadow a real key in the
+    // next (dotenvy skips keys that are already set, even to "").
+    fn has_deepgram_key() -> bool {
+        std::env::var("DEEPGRAM_API_KEY").map(|v| !v.trim().is_empty()).unwrap_or(false)
+    }
+    fn clear_blank_deepgram_key() {
+        if std::env::var("DEEPGRAM_API_KEY").is_ok() && !has_deepgram_key() {
+            std::env::remove_var("DEEPGRAM_API_KEY");
+        }
+    }
+
     let mut env_candidates: Vec<std::path::PathBuf> = Vec::new();
     if let Some(dir) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
         env_candidates.push(dir.join(".env"));
@@ -460,20 +484,45 @@ pub fn run() {
     if let Ok(appdata) = std::env::var("APPDATA") {
         env_candidates.push(std::path::PathBuf::from(appdata).join("com.meetily.ai").join(".env"));
     }
-    let mut env_loaded = false;
+    let mut key_source: Option<String> = if has_deepgram_key() {
+        Some("process environment".to_string())
+    } else {
+        None
+    };
     for path in &env_candidates {
-        if path.is_file() && dotenvy::from_path(path).is_ok() {
-            log::info!("Loaded .env from {}", path.display());
-            env_loaded = true;
+        if !path.is_file() {
+            continue;
+        }
+        clear_blank_deepgram_key();
+        match dotenvy::from_path(path) {
+            Ok(()) => log::info!("Loaded .env from {}", path.display()),
+            Err(e) => log::warn!(
+                "Problem loading .env from {}: {} (lines above the problem still loaded)",
+                path.display(),
+                describe_env_error(&e)
+            ),
+        }
+        if key_source.is_none() && has_deepgram_key() {
+            key_source = Some(path.display().to_string());
         }
     }
+    clear_blank_deepgram_key();
     match dotenvy::dotenv() {
         Ok(path) => {
             log::info!("Loaded .env from {}", path.display());
-            env_loaded = true;
+            if key_source.is_none() && has_deepgram_key() {
+                key_source = Some(path.display().to_string());
+            }
         }
-        Err(_) if env_loaded => {}
-        Err(_) => log::info!("No .env file found (Deepgram will fall back to local STT if no key)"),
+        Err(dotenvy::Error::Io(ref io)) if io.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => log::warn!(
+            "Problem loading the .env found from the working directory: {}",
+            describe_env_error(&e)
+        ),
+    }
+    match key_source {
+        Some(source) => log::info!("DEEPGRAM_API_KEY loaded (source: {})", source),
+        None => log::info!("No DEEPGRAM_API_KEY found (Deepgram will fall back to local STT)"),
     }
 
     let mut builder = tauri::Builder::default();
@@ -851,14 +900,14 @@ pub fn run() {
             // System settings commands
             #[cfg(target_os = "macos")]
             utils::open_system_settings,
-            // Retranscription commands
-            audio::retranscription::start_retranscription_command,
+            // Retranscription + import commands. Centura Capture: the two "start"
+            // commands are not registered — import copies source audio into the
+            // meetings folder (breaks the no-saved-audio policy) and retranscribe
+            // needs saved audio. Status/cancel commands stay for the UI's polling.
             audio::retranscription::cancel_retranscription_command,
             audio::retranscription::is_retranscription_in_progress_command,
-            // Import audio commands
             audio::import::select_and_validate_audio_command,
             audio::import::validate_audio_file_command,
-            audio::import::start_import_audio_command,
             audio::import::cancel_import_command,
             audio::import::is_import_in_progress_command,
         ])

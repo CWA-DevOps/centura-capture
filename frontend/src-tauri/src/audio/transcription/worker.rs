@@ -73,10 +73,12 @@ pub fn start_transcription_task<R: Runtime>(
             Ok(engine) => engine,
             Err(e) => {
                 error!("Failed to initialize transcription engine: {}", e);
+                // Centura Capture: not actionable — there is no model UI to send the
+                // user to, so a toast with the real cause beats a dead-end modal.
                 let _ = app.emit("transcription-error", serde_json::json!({
                     "error": e,
-                    "userMessage": "Recording failed: Unable to initialize speech recognition. Please check your model settings.",
-                    "actionable": true,
+                    "userMessage": "Recording stopped: Deepgram was unreachable and on-device transcription could not start. Check your network connection and restart Centura Capture.",
+                    "actionable": false,
                     "phase": "active"
                 }));
                 return;
@@ -230,6 +232,10 @@ pub fn start_transcription_task<R: Runtime>(
                                             duration: chunk_duration,
                                             speaker: None, // local engines don't diarize
                                         };
+
+                                        // Centura Capture: record for the vault export before emitting —
+                                        // results produced after Stop no longer reach the listener.
+                                        super::deepgram::record_session_segment(&update);
 
                                         if let Err(e) = app_clone.emit("transcript-update", &update)
                                         {

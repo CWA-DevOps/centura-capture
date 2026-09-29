@@ -39,9 +39,9 @@ pub fn export_meeting(
 ) -> Result<Option<VaultExport>> {
     // stop_recording detaches the transcript-update listener (and takes the
     // RecordingManager out of its global) before the transcription task drains,
-    // so `segments` is missing whatever Deepgram finalized after Stop. Merge in
-    // the Deepgram session's own record of every emitted result (dedup by
-    // sequence_id; the local fallback path leaves that buffer empty).
+    // so `segments` is missing whatever the engine finalized after Stop. Merge in
+    // the session's own record of every emitted result (Deepgram and the local
+    // fallback both write it; dedup by sequence_id).
     let deepgram_segments = super::transcription::deepgram::take_session_segments();
     let merged = merge_segments(segments, deepgram_segments);
 
