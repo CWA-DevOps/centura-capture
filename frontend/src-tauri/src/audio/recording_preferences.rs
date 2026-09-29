@@ -107,7 +107,7 @@ pub async fn load_recording_preferences<R: Runtime>(
     };
 
     // Try to get the preferences from store
-    let prefs = if let Some(value) = store.get("preferences") {
+    let mut prefs = if let Some(value) = store.get("preferences") {
         match serde_json::from_value::<RecordingPreferences>(value.clone()) {
             Ok(mut p) => {
                 info!("Loaded recording preferences from store");
@@ -129,6 +129,23 @@ pub async fn load_recording_preferences<R: Runtime>(
         RecordingPreferences::default()
     };
 
+    // Centura Capture: audio is never saved. A legacy store (written by stock
+    // Meetily, whose default is auto_save=true) is healed to false here and
+    // persisted, so no app sharing this data dir reads auto_save=true from it.
+    if prefs.auto_save {
+        warn!("Stored recording preference auto_save=true overridden to false (Centura Capture never saves audio)");
+        prefs.auto_save = false;
+        match serde_json::to_value(&prefs) {
+            Ok(value) => {
+                store.set("preferences", value);
+                if let Err(e) = store.save() {
+                    warn!("Failed to persist healed auto_save=false preference: {}", e);
+                }
+            }
+            Err(e) => warn!("Failed to serialize healed recording preferences: {}", e),
+        }
+    }
+
     info!("Loaded recording preferences: save_folder={:?}, auto_save={}, format={}, mic={:?}, system={:?}",
           prefs.save_folder, prefs.auto_save, prefs.file_format,
           prefs.preferred_mic_device, prefs.preferred_system_device);
@@ -149,8 +166,12 @@ pub async fn save_recording_preferences<R: Runtime>(
         .store("recording_preferences.json")
         .map_err(|e| anyhow::anyhow!("Failed to access store: {}", e))?;
 
+    // Centura Capture: never persist auto_save=true, whatever the UI sends.
+    let mut sanitized = preferences.clone();
+    sanitized.auto_save = false;
+
     // Serialize preferences to JSON value
-    let prefs_value = serde_json::to_value(preferences)
+    let prefs_value = serde_json::to_value(&sanitized)
         .map_err(|e| anyhow::anyhow!("Failed to serialize preferences: {}", e))?;
 
     // Save to store

@@ -24,12 +24,14 @@
 // may not be installed, and mixed engines would interleave sequence ids.)
 
 use super::worker::TranscriptUpdate;
+use crate::audio::recording_saver::TranscriptSegment;
 use crate::audio::AudioChunk;
 use futures_util::{SinkExt, StreamExt};
 use log::{error, info, warn};
 use serde::Deserialize;
 use std::borrow::Cow;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, Manager, Runtime};
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -50,6 +52,55 @@ const DRAIN_TIMEOUT: Duration = Duration::from_secs(10);
 // the frontend dedups on sequence_id, so ids must stay unique across meetings
 // within an app run.
 static SEQUENCE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+// Every final result this Deepgram session emitted, recorded directly (not via
+// the `transcript-update` event). Why: stop_recording takes RECORDING_MANAGER out
+// of its global slot and unlistens the transcript-update listener BEFORE it waits
+// for this task to drain. Everything Deepgram returns after Stop (the last
+// utterance(s): the VAD force-flush audio plus the CloseStream finalization) is
+// therefore never added to the manager's segments, and the vault export would
+// silently lose the end of every meeting. vault_export merges this buffer with
+// the manager's segments (dedup by sequence_id) so the Inbox transcript is whole.
+// Reset at the start of every session (maybe_run_deepgram); drained by
+// `take_session_segments` at export time.
+static SESSION_SEGMENTS: Mutex<Vec<TranscriptSegment>> = Mutex::new(Vec::new());
+
+/// Drain the segments recorded for the current/last Deepgram session. Called by
+/// the vault export after the transcription task has finished (stop_recording
+/// awaits it), so the drain tail is already included. Empty when the session ran
+/// on the local fallback engine.
+pub fn take_session_segments() -> Vec<TranscriptSegment> {
+    match SESSION_SEGMENTS.lock() {
+        Ok(mut segs) => std::mem::take(&mut *segs),
+        Err(poisoned) => std::mem::take(&mut *poisoned.into_inner()),
+    }
+}
+
+fn reset_session_segments() {
+    match SESSION_SEGMENTS.lock() {
+        Ok(mut segs) => segs.clear(),
+        Err(poisoned) => poisoned.into_inner().clear(),
+    }
+}
+
+fn record_session_segment(update: &TranscriptUpdate) {
+    // Same shape the recording_commands transcript-update listener builds.
+    let segment = TranscriptSegment {
+        id: format!("seg_{}", update.sequence_id),
+        text: update.text.clone(),
+        audio_start_time: update.audio_start_time,
+        audio_end_time: update.audio_end_time,
+        duration: update.duration,
+        display_time: update.timestamp.clone(),
+        confidence: update.confidence,
+        sequence_id: update.sequence_id,
+        speaker: update.speaker.clone(),
+    };
+    match SESSION_SEGMENTS.lock() {
+        Ok(mut segs) => segs.push(segment),
+        Err(poisoned) => poisoned.into_inner().push(segment),
+    }
+}
 
 /// Outcome of the Deepgram branch in `start_transcription_task`.
 pub enum DeepgramOutcome {
@@ -104,6 +155,10 @@ pub async fn maybe_run_deepgram<R: Runtime>(
     app: AppHandle<R>,
     receiver: UnboundedReceiver<AudioChunk>,
 ) -> DeepgramOutcome {
+    // New session: drop anything left from a previous meeting (including one that
+    // ran on the local fallback, where nothing is recorded here).
+    reset_session_segments();
+
     // Which provider is configured?
     let (provider, model) = match crate::api::api::api_get_transcript_config(
         app.clone(),
@@ -186,7 +241,8 @@ pub async fn maybe_run_deepgram<R: Runtime>(
                             serde_json::json!({
                                 "error": "deepgram_connection_lost",
                                 "userMessage": "Lost connection to the transcription service and couldn't reconnect. Recording stopped — the transcript up to this point was saved.",
-                                "actionable": false
+                                "actionable": false,
+                                "phase": "active"
                             }),
                         );
                         // Drain and discard queued audio so the pipeline's sender
@@ -490,6 +546,10 @@ fn handle_result<R: Runtime>(app: &AppHandle<R>, payload: &str, speech_emitted: 
         duration: (end - start).max(0.0),
         speaker: None, // diarization off
     };
+
+    // Record for the vault export BEFORE emitting, so a result that lands after
+    // stop_recording has detached the listener still reaches the Inbox file.
+    record_session_segment(&update);
 
     if let Err(e) = app.emit("transcript-update", &update) {
         error!("Deepgram: failed to emit transcript-update: {}", e);

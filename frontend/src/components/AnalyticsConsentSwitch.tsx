@@ -94,7 +94,7 @@ export default function AnalyticsConsentSwitch() {
 
         // Identify user with enhanced properties immediately after init
         await Analytics.identify(userId, {
-          app_version: '0.4.0',
+          app_version: '0.4.1',
           platform: 'tauri',
           first_seen: new Date().toISOString(),
           os: navigator.platform,
@@ -115,13 +115,9 @@ export default function AnalyticsConsentSwitch() {
 
         console.log('Analytics re-enabled successfully');
       } else {
-        // Track that user disabled analytics BEFORE disabling
-        try {
-          await invoke('track_analytics_disabled');
-        } catch (error) {
-          console.error('Failed to track analytics disabled:', error);
-        }
-
+        // Centura: do NOT send an 'analytics_disabled' event. The opt-out was
+        // already persisted above, so any event sent now would be telemetry
+        // after the user said no. Tear the client down immediately instead.
         await Analytics.disable();
         console.log('Analytics disabled successfully');
       }

@@ -544,7 +544,7 @@ const Sidebar: React.FC = () => {
                 )}
               </div>
               {searchQuery && item.id === 'meetings' && isSearching && (
-                <span className="ml-2 text-xs text-blue-500 animate-pulse">Searching...</span>
+                <span className="ml-2 text-xs text-centura-blue animate-pulse">Searching...</span>
               )}
             </>
           ) : (
@@ -691,7 +691,7 @@ const Sidebar: React.FC = () => {
                       <NotebookPen className="w-4 h-4 mr-2 text-gray-600" />
                       <span className="text-gray-700">{item.title}</span>
                       {searchQuery && item.id === 'meetings' && isSearching && (
-                        <span className="ml-2 text-xs text-blue-500 animate-pulse">Searching...</span>
+                        <span className="ml-2 text-xs text-centura-blue animate-pulse">Searching...</span>
                       )}
                     </div>
                   </div>
@@ -755,7 +755,7 @@ const Sidebar: React.FC = () => {
             </button>
             <Info isCollapsed={isCollapsed} />
             <div className="w-full flex items-center justify-center px-3 py-1 text-xs text-gray-400">
-              v0.4.0
+              v0.4.1
             </div>
           </div>
         )}

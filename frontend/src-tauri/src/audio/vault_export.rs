@@ -37,12 +37,20 @@ pub fn export_meeting(
     meeting_name: &str,
     segments: &[TranscriptSegment],
 ) -> Result<Option<VaultExport>> {
-    if segments.is_empty() {
+    // stop_recording detaches the transcript-update listener (and takes the
+    // RecordingManager out of its global) before the transcription task drains,
+    // so `segments` is missing whatever Deepgram finalized after Stop. Merge in
+    // the Deepgram session's own record of every emitted result (dedup by
+    // sequence_id; the local fallback path leaves that buffer empty).
+    let deepgram_segments = super::transcription::deepgram::take_session_segments();
+    let merged = merge_segments(segments, deepgram_segments);
+
+    if merged.is_empty() {
         log::info!("Vault export skipped: no transcript segments");
         return Ok(None);
     }
 
-    let mut ordered: Vec<&TranscriptSegment> = segments.iter().collect();
+    let mut ordered: Vec<&TranscriptSegment> = merged.iter().collect();
     ordered.sort_by_key(|s| s.sequence_id);
 
     let now = Local::now();
@@ -98,16 +106,47 @@ recorded_at: {recorded_at}\n\
     Ok(Some(VaultExport { transcript_path }))
 }
 
+/// Union of the manager's segments and the Deepgram session buffer, keyed by
+/// sequence_id. The manager's copy wins on a collision (same data either way).
+fn merge_segments(
+    manager: &[TranscriptSegment],
+    deepgram: Vec<TranscriptSegment>,
+) -> Vec<TranscriptSegment> {
+    let mut seen: std::collections::HashSet<u64> =
+        manager.iter().map(|s| s.sequence_id).collect();
+    let mut merged: Vec<TranscriptSegment> = manager.to_vec();
+    let mut recovered = 0usize;
+    for seg in deepgram {
+        if seen.insert(seg.sequence_id) {
+            merged.push(seg);
+            recovered += 1;
+        }
+    }
+    if recovered > 0 {
+        log::info!(
+            "Vault export: recovered {} trailing Deepgram segment(s) finalized after Stop",
+            recovered
+        );
+    }
+    merged
+}
+
 /// True when the meeting name is the app's auto-generated timestamp form, e.g.
 /// "Meeting 2026-06-30_09-05-39". Such names should be replaced by a real title
 /// during synthesis.
 fn is_auto_name(name: &str) -> bool {
     let n = name.trim();
-    if !n.starts_with("Meeting ") {
-        return false;
-    }
-    // crude check: contains a date-like "YYYY-MM-DD_" chunk
-    n.contains('-') && n.contains('_') && n.chars().filter(|c| c.is_ascii_digit()).count() >= 8
+    let rest = match n.strip_prefix("Meeting ") {
+        Some(r) => r,
+        None => return false,
+    };
+    // Auto names are "Meeting " + a pure timestamp. Two generators exist:
+    //   Rust fallback:      "Meeting 2026-06-30_09-05-39"
+    //   Frontend (default): "Meeting 30_06_26_09_05_39"  (useRecordingStart)
+    // The old check required a '-', so every frontend-started meeting was
+    // mislabeled title_source: user. Accept any all-timestamp remainder.
+    rest.chars().all(|c| c.is_ascii_digit() || matches!(c, '-' | '_' | ':' | ' '))
+        && rest.chars().filter(|c| c.is_ascii_digit()).count() >= 8
 }
 
 /// Render markdown body. When `diarized`, label by speaker (merging consecutive

@@ -236,6 +236,48 @@ pub async fn get_or_init_transcription_engine<R: Runtime>(
                 }
             }
         }
+        "deepgram" => {
+            // Centura Capture: reached only when Deepgram fell back (no key, or the
+            // first connect failed). The local fallback is Parakeet — the model
+            // onboarding downloads and the one validation prepares when the key is
+            // missing. When the key exists but the connect failed, validation
+            // prepared nothing, so initialize Parakeet here.
+            warn!("🦜 Deepgram unavailable — using the local Parakeet fallback");
+            let existing = {
+                let guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
+                    .lock()
+                    .unwrap();
+                guard.as_ref().cloned()
+            };
+            let ready = match &existing {
+                Some(engine) => engine.is_model_loaded().await,
+                None => false,
+            };
+            if !ready {
+                crate::parakeet_engine::commands::parakeet_init()
+                    .await
+                    .map_err(|e| format!("Local fallback (Parakeet) failed to initialize: {}", e))?;
+                crate::parakeet_engine::commands::parakeet_validate_model_ready_with_config(app)
+                    .await
+                    .map_err(|e| format!("Local fallback (Parakeet) model not ready: {}", e))?;
+            }
+            let engine = {
+                let guard = crate::parakeet_engine::commands::PARAKEET_ENGINE
+                    .lock()
+                    .unwrap();
+                guard.as_ref().cloned()
+            };
+            match engine {
+                Some(engine) => {
+                    if engine.is_model_loaded().await {
+                        Ok(TranscriptionEngine::Parakeet(engine))
+                    } else {
+                        Err("Local fallback (Parakeet) has no model loaded".to_string())
+                    }
+                }
+                None => Err("Local fallback (Parakeet) is not initialized".to_string()),
+            }
+        }
         "localWhisper" | _ => {
             info!("🎤 Initializing Whisper transcription engine");
             let whisper_engine = get_or_init_whisper(app).await?;

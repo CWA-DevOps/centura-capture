@@ -1,15 +1,47 @@
 use std::sync::Arc;
 use std::collections::HashMap;
-use tauri::command;
+use tauri::{command, AppHandle, Runtime};
+use tauri_plugin_store::StoreExt;
 use crate::analytics::{AnalyticsClient, AnalyticsConfig};
 
 // Global analytics client
 static ANALYTICS_CLIENT: std::sync::Mutex<Option<Arc<AnalyticsClient>>> = std::sync::Mutex::new(None);
 
+// Centura: defense-in-depth consent gate. The frontend already only calls
+// init_analytics after the user opts in, but the Rust side must never create a
+// PostHog client unless analytics.json records an explicit opt-in AND the
+// default-off migration has run (same rule AnalyticsProvider applies).
+fn analytics_consent_granted<R: Runtime>(app: &AppHandle<R>) -> bool {
+    match app.store("analytics.json") {
+        Ok(store) => {
+            let opted_in = store
+                .get("analyticsOptedIn")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let migrated = store
+                .get("analyticsDefaultOffMigrationV1")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            opted_in && migrated
+        }
+        Err(e) => {
+            log::warn!("analytics: could not read analytics.json consent ({}); treating as opted out", e);
+            false
+        }
+    }
+}
+
 #[command]
-pub async fn init_analytics() -> Result<(), String> {
+pub async fn init_analytics<R: Runtime>(app: AppHandle<R>) -> Result<(), String> {
+    if !analytics_consent_granted(&app) {
+        // Make sure no stale client survives either.
+        *ANALYTICS_CLIENT.lock().unwrap() = None;
+        log::info!("analytics: init refused, user has not opted in");
+        return Err("Analytics consent not granted".to_string());
+    }
+
     let config = AnalyticsConfig {
-        api_key: "phc_Aa9PqeCkDkVbtbRsYjtmHANBfcscjCVupxZwrtL5vZ77".to_string(),
+        api_key: "phc_ohznXPkRSJYWmrfez9mYxtXv5U5Nekq3iiUts87dJfcr".to_string(),
         host: Some("https://us.i.posthog.com".to_string()),
         enabled: true,
     };

@@ -24,8 +24,12 @@ export interface BetaFeatures {
   importAndRetranscribe: boolean;
 }
 
+// Centura Capture: import copies the source audio into the meetings folder
+// (audio/import.rs), which breaks the no-saved-audio policy, and retranscribe
+// needs saved audio that Centura never keeps. Forced off in loadBetaFeatures too,
+// so a stored `true` from earlier Meetily use cannot re-enable it.
 export const DEFAULT_BETA_FEATURES: BetaFeatures = {
-  importAndRetranscribe: true, // Default: enabled
+  importAndRetranscribe: false,
 };
 
 
@@ -64,7 +68,7 @@ export function loadBetaFeatures(): BetaFeatures {
     if (saved) {
       const parsed = JSON.parse(saved) as Partial<BetaFeatures>;
       // Merge with defaults to handle missing keys (graceful degradation)
-      return { ...DEFAULT_BETA_FEATURES, ...parsed };
+      return { ...DEFAULT_BETA_FEATURES, ...parsed, importAndRetranscribe: false };
     }
   } catch (error) {
     console.error('[BetaFeatures] Failed to load from localStorage:', error);

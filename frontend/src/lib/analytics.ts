@@ -25,6 +25,7 @@ export class Analytics {
   private static sessionStartTime: number | null = null;
   private static meetingsInSession: number = 0;
   private static deviceInfo: DeviceInfo | null = null;
+  private static readonly reportedTranscriptionErrorCodes = new Set<string>();
 
   static async init(): Promise<void> {
     // Prevent duplicate initialization
@@ -55,11 +56,14 @@ export class Analytics {
   }
 
   static async disable(): Promise<void> {
+    // Centura: close the JS-side gate first and unconditionally, so a failed
+    // disable_analytics invoke can never leave tracking calls flowing after opt-out.
+    this.initialized = false;
+    this.currentUserId = null;
+    this.initializationPromise = null;
+    this.reportedTranscriptionErrorCodes.clear();
     try {
       await invoke('disable_analytics');
-      this.initialized = false;
-      this.currentUserId = null;
-      this.initializationPromise = null;
       console.log('Analytics disabled successfully');
     } catch (error) {
       console.error('Failed to disable analytics:', error);
@@ -112,6 +116,7 @@ export class Analytics {
     try {
       const sessionId = await invoke('start_analytics_session', { userId });
       this.currentUserId = userId;
+      this.reportedTranscriptionErrorCodes.clear();
       
       return sessionId as string;
     } catch (error) {
@@ -625,6 +630,7 @@ export class Analytics {
     this.initialized = false;
     this.currentUserId = null;
     this.initializationPromise = null;
+    this.reportedTranscriptionErrorCodes.clear();
   }
 
   // Wait for analytics to be initialized
@@ -666,19 +672,36 @@ export class Analytics {
     }
   }
 
-  // Track transcription errors
+  private static getTranscriptionErrorCode(errorMessage: string): 'auth_rejected' | 'ort_failed' | 'transcription_failed' | null {
+    const message = errorMessage.toLowerCase();
+    if (/\bcool(?:ing)?[\s-]?down\b/.test(message)) return null;
+    if (/http 401|unauthorized|invalid provider token|invalid api key|authentication failed/.test(message)) {
+      return 'auth_rejected';
+    }
+    if (/ort error|onnxruntime|onnx runtime/.test(message)) {
+      return 'ort_failed';
+    }
+    // ponytail: unknown failures share one bucket; split only when evidence requires another actionable class.
+    return 'transcription_failed';
+  }
+
+  // Track each transcription error class at most once per analytics session.
   static async trackTranscriptionError(errorMessage: string) {
     if (!this.initialized) {
       console.warn('Analytics not initialized, skipping transcription error tracking');
       return;
     }
 
+    const errorCode = this.getTranscriptionErrorCode(errorMessage);
+    if (!errorCode || this.reportedTranscriptionErrorCodes.has(errorCode)) return;
+    this.reportedTranscriptionErrorCodes.add(errorCode);
+
     try {
-      console.log('Tracking transcription error event:', { errorMessage });
+      console.log('Tracking transcription error event:', { errorCode });
       await invoke('track_event', {
         eventName: 'transcription_error',
         properties: {
-          error_message: errorMessage,
+          error_code: errorCode,
           timestamp: new Date().toISOString()
         }
       });
@@ -768,7 +791,7 @@ export class Analytics {
         modelProvider,
         modelName,
         success,
-        durationSeconds,
+        durationSeconds: durationSeconds === undefined ? undefined : Math.floor(durationSeconds),
         errorMessage
       });
       console.log('Summary generation completed event tracked successfully');
